@@ -131,9 +131,9 @@ allowed 'curl -s https://api.github.com/repos/x/y | jq .name'
 allowed 'curl -o install.sh https://example.com/install.sh'
 allowed 'yarn test && yarn build'
 
-# fails open on input it can't parse
+# fails closed on input it can't parse
 printf 'not json' | "$hook" 2>/dev/null
-[ $? -eq 0 ] || { echo "FAIL: unparseable input should be allowed"; failures=$((failures + 1)); }
+[ $? -eq 2 ] || { echo "FAIL: unparseable input should be blocked"; failures=$((failures + 1)); }
 
 if [ $failures -eq 0 ]; then
   echo "block-dangerous.sh: all tests passed"

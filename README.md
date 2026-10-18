@@ -10,12 +10,13 @@ Guardrails for long-running Claude Code sessions, installed into each repo as co
 | `.claude/hooks/stop-verify.sh` | `Stop` hook. When Claude ends a turn with work on the branch (uncommitted changes, or commits not on the default branch), runs `.claude/verify.sh`. On failure it exits 2 with the last 40 lines, so Claude keeps fixing. One forced retry per turn (`stop_hook_active`), passes are cached per tree state, and verify is killed after 540s. |
 | `.claude/hooks/json-field.sh` | Reads one field from the hook JSON with jq, python3 or node, whichever exists. |
 | `.claude/verify.sh` | The repo's "done" check (tests, build, ...), from `verify/<repo-name>.sh`. |
-| `.claude/settings.json` | Registers the hooks and adds `permissions.deny` rules for the same push/reset/branch/secret cases. |
+| `.claude/settings.json` | Registers the hooks, turns on the Bash sandbox, and adds `permissions.deny` rules for `sudo` and the same push/reset/branch/secret cases. |
 | `CLAUDE.md` | Gets a short "Guardrails" section between `<!-- claude-harness:start/end -->` markers. |
 
 How the layers fit, and their limits:
+- **The sandbox** is the layer that protects the machine. macOS (Seatbelt) or Linux (bubblewrap) enforces it on every shell command Claude runs and every process those commands start: writes only inside the repo and temp directories, network only to `allowedDomains`. A `python -c "shutil.rmtree(...)"` outside the repo fails with "Operation not permitted", even though no pattern catches it. `allowUnsandboxedCommands: false` takes away Claude's "retry outside the sandbox" fallback. Two exceptions run outside it, because they need your keychain: `git push *` and `gh pr *`, and only when the whole command matches (not chained with `&&`). Those are still checked by the hook and deny rules. Claude's own Edit/Write tools and the hooks run outside the sandbox: the tools follow permission rules (edits outside the project prompt), and the hooks are these scripts. If the sandbox can't start (for example, a container without bubblewrap), Claude Code runs commands unsandboxed rather than failing.
 - **Deny rules** apply in every permission mode, but they match the command text as Claude writes it. The docs say they're not a security boundary: other spellings, and scripts that read files themselves, get past them.
-- **The hook** catches more spellings (flags in any order, `git -C`, compound commands, `$(...)`), but it's still pattern matching. It fails open if it can't parse its input.
+- **The hook** catches more spellings (flags in any order, `git -C`, compound commands, `$(...)`), but it's still pattern matching. Its main job is pushes, git history and secrets, which the sandbox doesn't cover. It fails closed: if jq, python3 and node are all missing, it blocks every command.
 - **GitHub rulesets** (require PR, block force push and deletion) are the only hard stop for pushes. Set them up on every repo.
 - Claude Code also has its own built-in refusal of `rm` on critical paths.
 

@@ -51,3 +51,5 @@ Local toolchain (macOS): bash 3.2, Node 18.16, yarn 1.22, Python 3.6.3 (Anaconda
 | music_viz_gltchr | [#32](https://github.com/SOMEiTIME/music_viz_gltchr/pull/32) | pass (tests + build, 3.9s) |
 
 Hook self-tests (89 + 10 cases) pass against every repo's installed copies. Live `claude -p` check in music_viz_gltchr: PreToolUse blocked `git push --dry-run origin HEAD:main` with the hook's message; Stop ran verify and cached the pass.
+
+Follow-up the same day: turned on the Bash sandbox and made the hook fail closed (second commit on each PR). Live sandbox check from the project settings alone: writes to `~` refused (`touch` and Python), repo writes, `yarn test`, `git push --dry-run`, and `gh pr list` OK. Without the exclusion, `git push` fails in the sandbox (osxkeychain can't be reached), as do `gh` commands other than `gh pr` (TLS certificate checks). The midi build warning is fixed in [midi-interval-processor#6](https://github.com/SOMEiTIME/midi-interval-processor/pull/6).

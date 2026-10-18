@@ -5,7 +5,7 @@
 #   unioned, existing keys and values win)
 # - creates <repo>/.claude/verify.sh from verify/<repo-name>.sh if it's missing
 #   (<repo-name> comes from the origin URL, so it works in worktrees too)
-# - appends the guardrails section to <repo>/CLAUDE.md unless it's already there
+# - appends the guardrails section to <repo>/CLAUDE.md, or refreshes it in place
 # Idempotent: a second run changes nothing. Needs python3 for the JSON merge.
 set -euo pipefail
 
@@ -76,6 +76,20 @@ if ! grep -qs '<!-- claude-harness:start -->' "$claude_md"; then
   [ -s "$claude_md" ] && echo >>"$claude_md"
   cat "$harness/templates/CLAUDE.md.template" >>"$claude_md"
   changed "CLAUDE.md"
+elif python3 - "$harness/templates/CLAUDE.md.template" "$claude_md" <<'PY'
+import re, sys
+# Replace the marked section with the current template; exit 1 if it's already current.
+template = open(sys.argv[1]).read().strip()
+path = sys.argv[2]
+text = open(path).read()
+updated = re.sub(r"<!-- claude-harness:start -->.*?<!-- claude-harness:end -->",
+                 lambda m: template, text, count=1, flags=re.S)
+if updated == text:
+    sys.exit(1)
+open(path, "w").write(updated)
+PY
+then
+  changed "CLAUDE.md (guardrails section)"
 fi
 
 echo "Done."
