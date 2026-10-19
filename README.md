@@ -1,46 +1,54 @@
 # claude-harness
 
-Guardrails for long-running Claude Code sessions, installed into each repo as committed files so they also apply in cloud sessions (which only read the repo's `.claude/settings.json`, not `~/.claude/settings.json`).
+Guardrails for every Claude Code session on this Mac, kept in one place. `install.sh` puts them in `~/.claude`, so they apply in any folder. Each repo keeps only its own test command, `.claude/verify.sh`.
 
-## What it installs
+Cloud sessions don't get these (they only see the repo). They run in isolated VMs that can't touch this machine, and GitHub rulesets protect the default branches.
 
-| File in the repo | What it does |
+## What gets installed
+
+| Where | What it does |
 | :- | :- |
-| `.claude/hooks/block-dangerous.sh` | `PreToolUse` hook on Bash. Exits 2 (blocks, with the reason) for force pushes, pushes to main/master, deleting main/master, `git reset --hard origin/...`, recursive `rm` of `/`, `~`, `$VARS`, `..`, the repo, `.git` or anything outside the repo, commands naming `.env`/`*.pem`/`*.key`/SSH keys/credential files, and `curl ... \| sh`. |
-| `.claude/hooks/stop-verify.sh` | `Stop` hook. When Claude ends a turn with work on the branch (uncommitted changes, or commits not on the default branch), runs `.claude/verify.sh`. On failure it exits 2 with the last 40 lines, so Claude keeps fixing. One forced retry per turn (`stop_hook_active`), passes are cached per tree state, and verify is killed after 540s. |
-| `.claude/hooks/json-field.sh` | Reads one field from the hook JSON with jq, python3 or node, whichever exists. |
-| `.claude/verify.sh` | The repo's "done" check (tests, build, ...), from `verify/<repo-name>.sh`. |
-| `.claude/settings.json` | Registers the hooks, turns on the Bash sandbox, and adds `permissions.deny` rules for `sudo` and the same push/reset/branch/secret cases. |
-| `CLAUDE.md` | Gets a short "Guardrails" section between `<!-- claude-harness:start/end -->` markers. |
+| `~/.claude/settings.json` | Turns on the Bash **sandbox**, adds **deny rules** (`sudo`, force/main pushes, `reset --hard origin/...`, deleting main/master, reading `.env`/key/credential files), and registers the two hooks. Merged into your existing settings: lists are unioned, your own values win. |
+| `~/.claude/hooks/claude-harness/block-dangerous.sh` | Runs before every Bash command and blocks (exit 2, with the reason) force pushes, pushes to main/master (including `HEAD`/`@` from main), deleting main/master, `git reset --hard origin/...`, recursive `rm` of `/`, `~`, `$VARS`, `..`, the repo, `.git` or anything outside the repo (it follows `cd`), commands naming secret files, and `curl ... \| sh`. If it can't read its input, it blocks everything. |
+| `~/.claude/hooks/claude-harness/stop-verify.sh` | Runs when Claude ends a turn. In a repo with `.claude/verify.sh` and work on the branch (uncommitted changes, or commits not on the default branch), it runs the script and, on failure, sends Claude back with the last 40 lines. One forced retry per turn, passes are cached per tree state, and verify is killed after 540s. |
+| `~/.claude/hooks/claude-harness/json-field.sh` | Reads the hook input with jq, python3 or node, whichever exists. |
+| `~/.claude/CLAUDE.md` | A short "Guardrails" section (between `<!-- claude-harness:start/end -->` markers) telling Claude what's in place. |
 
-How the layers fit, and their limits:
-- **The sandbox** is the layer that protects the machine. macOS (Seatbelt) or Linux (bubblewrap) enforces it on every shell command Claude runs and every process those commands start: writes only inside the repo and temp directories, network only to `allowedDomains`. A `python -c "shutil.rmtree(...)"` outside the repo fails with "Operation not permitted", even though no pattern catches it. `allowUnsandboxedCommands: false` takes away Claude's "retry outside the sandbox" fallback. Two exceptions run outside it, because they need your keychain: `git push *` and `gh pr *`, and only when the whole command matches (not chained with `&&`). Those are still checked by the hook and deny rules. Claude's own Edit/Write tools and the hooks run outside the sandbox: the tools follow permission rules (edits outside the project prompt), and the hooks are these scripts. If the sandbox can't start (for example, a container without bubblewrap), Claude Code runs commands unsandboxed rather than failing.
-- **Deny rules** apply in every permission mode, but they match the command text as Claude writes it. The docs say they're not a security boundary: other spellings, and scripts that read files themselves, get past them.
-- **The hook** catches more spellings (flags in any order, `git -C`, compound commands, `$(...)`), but it's still pattern matching. Its main job is pushes, git history and secrets, which the sandbox doesn't cover. It fails closed: if jq, python3 and node are all missing, it blocks every command.
-- **GitHub rulesets** (require PR, block force push and deletion) are the only hard stop for pushes. Set them up on every repo.
-- Claude Code also has its own built-in refusal of `rm` on critical paths.
+How the layers fit:
+- **The sandbox** protects the machine. macOS enforces it on every shell command and everything those commands start: writes only inside the current project and temp folders, network only to `allowedDomains`. It blocks things no pattern can catch, like `python -c "shutil.rmtree(...)"`. `allowUnsandboxedCommands: false` takes away Claude's "retry outside the sandbox" fallback, and `failIfUnavailable` stops Claude Code from starting if the sandbox can't. It also stops Claude's shell from writing to `~/.claude`, so Claude can't edit these guardrails. Only `git push *` and `gh pr *` run outside it (they need the keychain), and only as the whole command, not chained.
+- **The hook** covers what the sandbox doesn't: pushes, git history, secrets inside the project. It's pattern matching, so unusual spellings can get past it.
+- **Deny rules** are a second net for the same cases. Read rules also become sandbox read blocks, so keep them narrow: an earlier `Read(//**/*.pem)` blocked `/etc/ssl/cert.pem` and broke HTTPS for every command.
+- **GitHub rulesets** (require PR, block force push and deletion, no admin bypass) are the hard stop for pushes, locally and in the cloud.
 
-## Install into a repo
+## Install or update
 
+Run these yourself (with `!` inside Claude Code), because the sandbox stops Claude from writing to `~/.claude`:
 ```
-./install.sh /path/to/repo
+~/Documents/GitHub/claude-harness/install.sh --dry-run   # show what would change
+~/Documents/GitHub/claude-harness/install.sh             # do it
 ```
-Then commit `.claude/` and `CLAUDE.md` on a branch and open a PR. The script is idempotent and merges rather than overwrites: lists in an existing `settings.json` are unioned with the template, existing values win, an existing `verify.sh` is left alone, and the CLAUDE.md section is only added once. Needs python3 for the merge.
+It's idempotent. Merging only adds entries, so to drop a rule an earlier version added, list it under `claudeHarnessRemove` in `templates/settings.json`. To undo everything, delete the `sandbox`, `hooks` and harness deny entries from `~/.claude/settings.json` (or restore `settings.json.bak-20261018`), delete `~/.claude/hooks/claude-harness/`, and remove the marked section from `~/.claude/CLAUDE.md`.
 
-For a new repo, add `verify/<repo-name>.sh` first (the name comes from the origin URL). Otherwise install writes a stub that always passes.
+## Give a repo a verify script
 
-Updating: edit the files here, re-run `install.sh` on each repo, commit. `install.sh` updates the hooks and adds new settings entries, but it won't remove deny rules or rewrite an existing `verify.sh` or CLAUDE.md section. Edit those by hand.
+Write `verify/<repo-name>.sh` here (tests, build; exit non-zero on failure), then:
+```
+./add-verify.sh /path/to/repo
+```
+and commit `.claude/verify.sh` in the repo on a branch.
 
 ## Test
 
 ```
-hooks/test-block-dangerous.sh [repo/.claude/hooks/block-dangerous.sh]
-hooks/test-stop-verify.sh [repo/.claude/hooks/stop-verify.sh]
+hooks/test-block-dangerous.sh [path/to/block-dangerous.sh]
+hooks/test-stop-verify.sh [path/to/stop-verify.sh]
 ```
-Scripts are written for bash 3.2 (macOS) and don't need jq.
+Written for bash 3.2 (macOS); no jq needed. They work inside the sandbox.
 
 ## Known gaps
 
-- Pattern matching, not parsing: heredocs, `eval`, aliases, or a script that runs `git push --force` internally get through. So does a commit message containing `rm -rf /` or `.env`, which gets blocked by mistake (rephrase it).
-- `.env.example` is blocked too, to match the `Read(**/.env.*)` deny rule, which can't make exceptions.
-- `stop-verify.sh` runs `verify.sh` with whatever toolchain the session has. In a fresh cloud container, the verify scripts install node deps if `node_modules` is missing; other tools (yarn, gtest) have to be in the image.
+- The hook is pattern matching: heredocs, `eval`, aliases, and scripts that run git themselves get past it. A commit message mentioning `rm -rf /` or `.env` gets blocked by mistake; rephrase it.
+- `.env.example` is blocked too, to match the `.env.*` deny rule (deny rules can't make exceptions).
+- In sandboxed sessions, `yarn install` downloads sometimes abort (seen 2026-10-18, cause unknown; it worked on one retry with a fresh `--cache-folder`). The Stop hook runs outside the sandbox, so verify isn't affected.
+- Inside the sandbox, `gh` commands other than `gh pr`, `docker`, `open`, and starting another `claude` fail. Run them yourself with `!`.
+- The jq path in `json-field.sh` is untested (jq isn't installed here); the python3 and node paths are tested.

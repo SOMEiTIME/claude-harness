@@ -1,4 +1,10 @@
 {
+  "claudeHarnessRemove": {
+    "permissions.deny": [
+      "Read(//**/*.pem)",
+      "Read(//**/*.key)"
+    ]
+  },
   "permissions": {
     "deny": [
       "Bash(sudo *)",
@@ -17,18 +23,22 @@
       "Bash(git push *:refs/heads/main)",
       "Bash(git push *:refs/heads/master)",
       "Bash(git reset --hard origin/*)",
-      "Bash(git branch * main)",
-      "Bash(git branch * master)",
-      "Read(**/.env)",
-      "Read(**/.env.*)",
-      "Read(**/*.pem)",
-      "Read(**/*.key)",
-      "Read(**/id_rsa*)",
-      "Read(**/id_ed25519*)",
+      "Read(//**/.env)",
+      "Read(//**/.env.*)",
+      "Read(~/**/*.pem)",
+      "Read(~/**/*.key)",
+      "Read(//**/id_rsa*)",
+      "Read(//**/id_ed25519*)",
       "Read(~/.ssh/**)",
       "Read(~/.aws/**)",
       "Read(~/.netrc)",
-      "Read(~/.git-credentials)"
+      "Read(~/.git-credentials)",
+      "Bash(git branch -d main)",
+      "Bash(git branch -D main)",
+      "Bash(git branch --delete main)",
+      "Bash(git branch -d master)",
+      "Bash(git branch -D master)",
+      "Bash(git branch --delete master)"
     ]
   },
   "sandbox": {
@@ -45,7 +55,8 @@
         "registry.yarnpkg.com",
         "registry.npmjs.org"
       ]
-    }
+    },
+    "failIfUnavailable": true
   },
   "hooks": {
     "PreToolUse": [
@@ -54,7 +65,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/block-dangerous.sh",
+            "command": "\"$HOME\"/.claude/hooks/claude-harness/block-dangerous.sh",
             "timeout": 10
           }
         ]
@@ -65,7 +76,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/stop-verify.sh",
+            "command": "\"$HOME\"/.claude/hooks/claude-harness/stop-verify.sh",
             "timeout": 600
           }
         ]

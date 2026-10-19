@@ -5,7 +5,7 @@
 
 hook="${1:-$(dirname "$0")/stop-verify.sh}"
 hook="$(cd "$(dirname "$hook")" && pwd)/$(basename "$hook")"
-tmp="$(mktemp -d)"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/claude-harness-test.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
 git init -q --bare "$tmp/origin.git"

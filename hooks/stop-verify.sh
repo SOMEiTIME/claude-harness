@@ -50,7 +50,7 @@ stamp="$(git rev-parse --git-path claude-verify-passed)"
 [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$(fingerprint)" ] && exit 0
 
 # Run verify in its own process group so a timeout kills everything it started.
-log="$(mktemp -t claude-verify.XXXXXX)"
+log="$(mktemp "${TMPDIR:-/tmp}/claude-verify.XXXXXX")"
 trap 'rm -f "$log"' EXIT
 timeout_secs="${VERIFY_TIMEOUT:-540}"
 set -m

@@ -1,8 +1,8 @@
 <!-- claude-harness:start -->
-## Guardrails
-- Done means `.claude/verify.sh` passes. A Stop hook runs it when you finish a turn with work on the branch and sends you back to fix failures. If it can't pass (missing tool, flaky test), tell the user why instead of weakening the script.
-- `.claude/hooks/block-dangerous.sh` blocks force pushes, pushes to main/master, deleting main/master, `git reset --hard origin/...`, recursive `rm` outside the repo, reading `.env`/key/credential files, and `curl | sh`. If you need something it blocks, ask the user. Don't work around it or edit the hooks or `.claude/settings.json` to get past it.
-- Shell commands run in a sandbox: they can write only inside the repo and temp directories, and reach only the allowed hosts. `git push` and `gh pr ...` run outside it, but only on their own, not chained with `&&`. Other `gh` commands fail inside it. If the sandbox blocks something you need, tell the user rather than working around it.
-- Always work on a branch and finish with a PR; never commit or push to main/master. Commit in small checkpoints as you go.
+## Guardrails (all projects)
+- In a repo with `.claude/verify.sh`, done means it passes. A Stop hook runs it when you finish a turn with work on the branch and sends you back to fix failures. If it can't pass (missing tool, flaky test), tell the user why instead of weakening the script.
+- A safety hook blocks force pushes, pushes to main/master, deleting main/master, `git reset --hard origin/...`, recursive `rm` outside the repo, reading `.env`/key/credential files, and `curl | sh`. If you need something it blocks, ask the user. Don't work around it.
+- Shell commands run in a sandbox: they can write only inside the current project and temp directories (use `$TMPDIR`), and reach only the allowed hosts. `git push` and `gh pr ...` run outside it, but only on their own, not chained with `&&`. Other `gh` commands, `docker`, `open`, and starting another `claude` fail inside it. If the sandbox blocks something you need, tell the user the command to run themselves (with `!`) rather than working around it.
+- The guardrails live in `~/.claude` and come from `~/Documents/GitHub/claude-harness`. To change them, edit the harness and ask the user to re-run its `install.sh`.
 - Ask before adding a new dependency.
 <!-- claude-harness:end -->

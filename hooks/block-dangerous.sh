@@ -16,7 +16,7 @@ hook_dir="$(cd "$(dirname "$0")" && pwd)"
 input="$(cat)"
 
 if ! command="$(printf '%s' "$input" | "$hook_dir/json-field.sh" tool_input.command)"; then
-  echo "Blocked by .claude/hooks/block-dangerous.sh: couldn't parse the hook input, so the command can't be checked. It needs jq, python3 or node on PATH; ask the user to fix that." >&2
+  echo "Blocked by the claude-harness safety hook (block-dangerous.sh): couldn't parse the hook input, so the command can't be checked. It needs jq, python3 or node on PATH; ask the user to fix that." >&2
   exit 2
 fi
 [ -z "$command" ] && exit 0
@@ -27,16 +27,20 @@ repo_root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)"
 [ -n "$repo_root" ] || repo_root="$(cd "${CLAUDE_PROJECT_DIR:-$cwd}" && pwd -P)"
 
 block() {
-  echo "Blocked by .claude/hooks/block-dangerous.sh: $1. If this really is needed, ask the user to run it themselves." >&2
+  echo "Blocked by the claude-harness safety hook (block-dangerous.sh): $1. If this really is needed, ask the user to run it themselves." >&2
   exit 2
 }
 
 # --- whole-command checks ------------------------------------------------------
 
-# Download piped or substituted into an interpreter.
-pipe_to_shell='(curl|wget)[^;&]*\|[[:space:]]*(sudo[[:space:]]+)?(env[[:space:]]+)?(sh|bash|zsh|dash|ksh|fish|python[0-9.]*|perl|ruby|node)([[:space:]]|$)'
+# Download piped or substituted into an interpreter. Shells run stdin whatever
+# their arguments; python/perl/ruby/node only when given no script (bare or "-"),
+# so `curl ... | python3 -m json.tool` is fine.
+download_pipe='(curl|wget)[^;&]*\|[[:space:]]*(sudo[[:space:]]+)?(env[[:space:]]+)?'
+pipe_to_shell="${download_pipe}(sh|bash|zsh|dash|ksh|fish)([[:space:]]|\$)"
+pipe_to_interpreter="${download_pipe}(python[0-9.]*|perl|ruby|node)[[:space:]]*(-([[:space:]]|\$)|\$|[;&|)])"
 shell_of_download='(^|[^A-Za-z0-9_])(sh|bash|zsh|dash|ksh|source|\.)[[:space:]]+(-[A-Za-z]+[[:space:]]+)*.?(<\(|\$\()[[:space:]]*(curl|wget)'
-if [[ $command =~ $pipe_to_shell ]] || [[ $command =~ $shell_of_download ]]; then
+if [[ $command =~ $pipe_to_shell ]] || [[ $command =~ $pipe_to_interpreter ]] || [[ $command =~ $shell_of_download ]]; then
   block "piping a download into a shell runs unreviewed code"
 fi
 
@@ -70,7 +74,8 @@ unsafe_rm_target() {
   esac
   case "$target" in
     /*) path="$target" ;;
-    *) path="$cwd/$target" ;;
+    *) [ -n "$cwd" ] || { echo "an earlier cd went somewhere that can't be checked"; return; }
+       path="$cwd/$target" ;;
   esac
   while [ "${path%/}" != "$path" ] && [ "$path" != "/" ]; do path="${path%/}"; done
   path="${path%/.}"
@@ -112,11 +117,16 @@ check_rm() {
 
 is_main() { [ "$1" = main ] || [ "$1" = master ]; }
 
+# Prints the branch checked out in directory $1.
+current_branch() { git -C "${1:-.}" branch --show-current 2>/dev/null; }
+
 check_git() {
   # Skip git's global options (-C <dir>, -c <key=value>, --no-pager, ...).
+  local git_dir="$cwd"
   while [ $# -gt 0 ]; do
     case "$1" in
-      -C|-c) shift 2 ;;
+      -C) [ $# -ge 2 ] && git_dir="$2"; shift; [ $# -gt 0 ] && shift ;;
+      -c) shift; [ $# -gt 0 ] && shift ;;
       -*) shift ;;
       *) break ;;
     esac
@@ -140,15 +150,17 @@ check_git() {
         esac
       done
       # positional[0] is the remote; the rest are refspecs (src:dst or just a branch).
+      # HEAD and @ (alone, or as the destination) mean the current branch.
       local i dst
       for ((i = 1; i < ${#positional[@]}; i++)); do
         dst="${positional[$i]##*:}"
         dst="${dst#refs/heads/}"
+        case "$dst" in HEAD|@) dst="$(current_branch "$git_dir")" ;; esac
         is_main "$dst" && block "pushing to $dst is not allowed; push a branch and open a PR"
       done
       if [ ${#positional[@]} -le 1 ]; then
         local current
-        current="$(git -C "$cwd" branch --show-current 2>/dev/null)"
+        current="$(current_branch "$git_dir")"
         is_main "$current" && block "a bare git push from $current would push to $current; push a branch and open a PR"
       fi
       ;;
@@ -181,6 +193,27 @@ check_git() {
   esac
 }
 
+# Prints where `cd $1` from $cwd lands, or nothing if that can't be known
+# (a variable, `cd -`, or a directory that doesn't exist yet and uses ..).
+resolve_cd() {
+  local target="$1"
+  [ -n "$cwd" ] || return
+  case "$target" in
+    ""|"~") target="$HOME" ;;
+    "~/"*) target="$HOME/${target#\~/}" ;;
+    "-"|"\$"*|"~"*) return ;;
+    /*) ;;
+    *) target="$cwd/$target" ;;
+  esac
+  if [ -d "$target" ]; then
+    (cd "$target" && pwd -P)
+  else
+    # Not created yet (e.g. `mkdir -p src && cd src`): use the path as written.
+    case "$target" in */..|*/../*) return ;; esac
+    echo "$target"
+  fi
+}
+
 # Split into simple commands at ; & | && || newlines and $( ( ) `, then check each.
 segments="$(printf '%s\n' "$command" | awk '{ gsub(/&&|\|\||[;&|`()]/, "\n"); print }')"
 while IFS= read -r segment; do
@@ -207,6 +240,7 @@ while IFS= read -r segment; do
   case "$program" in
     rm) check_rm ${args[@]+"${args[@]}"} ;;
     git) check_git ${args[@]+"${args[@]}"} ;;
+    cd|pushd) cwd="$(resolve_cd "${args[0]:-}")" ;;
   esac
 done <<<"$segments"
 
