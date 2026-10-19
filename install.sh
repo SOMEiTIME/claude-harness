@@ -6,6 +6,7 @@
 # - merges templates/settings.json into ~/.claude/settings.json (lists are
 #   unioned, existing keys and values win)
 # - adds the guardrails section to ~/.claude/CLAUDE.md, or refreshes it
+# - creates ~/.cache/yarn-sandbox, the yarn cache sandboxed commands use
 # Idempotent: a second run changes nothing. Needs python3 for the merges.
 # Run it yourself (with `!` inside Claude Code): the sandbox stops Claude's
 # shell from writing to ~/.claude, which is what keeps the guardrails safe.
@@ -66,6 +67,9 @@ with open(template_path) as f:
 # "claudeHarnessRemove" maps a dotted path to entries earlier versions added
 # that should go now (merging only ever adds).
 remove = template.pop("claudeHarnessRemove", {})
+# Claude Code doesn't expand ~ in env values, so do it here.
+if "env" in template:
+    template["env"] = {k: os.path.expanduser(v) for k, v in template["env"].items()}
 existing = {}
 if os.path.exists(settings_path):
     with open(settings_path) as f:
@@ -82,6 +86,14 @@ with open(out_path, "w") as f:
     f.write(json.dumps(merged, indent=2) + "\n")
 PY
 write_if_changed "$claude_dir/settings.json" "$tmp/settings.json" "settings.json"
+
+# The sandbox's own yarn cache (YARN_CACHE_FOLDER in the template). Yarn falls
+# back to a temp folder if it's missing, so create it up front.
+yarn_cache="$HOME/.cache/yarn-sandbox"
+if [ ! -d "$yarn_cache" ]; then
+  echo "== $yarn_cache (new directory)"
+  [ -n "$dry_run" ] || mkdir -p "$yarn_cache"
+fi
 
 python3 - "$harness/templates/CLAUDE.md.template" "$claude_dir/CLAUDE.md" "$tmp/CLAUDE.md" <<'PY'
 import os, re, sys

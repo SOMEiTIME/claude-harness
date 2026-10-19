@@ -26,6 +26,10 @@ repo_root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 verify="$repo_root/.claude/verify.sh"
 [ -x "$verify" ] || exit 0
 cd "$repo_root" || exit 0
+# Settings' env points yarn at a cache sandboxed commands can write to. Verify
+# runs outside the sandbox, so it uses the normal cache: nothing written from
+# inside the sandbox gets installed unsandboxed.
+unset YARN_CACHE_FOLDER
 
 # Is there any work on this branch? Compare against origin's default branch.
 default_ref="$(git symbolic-ref -q --short refs/remotes/origin/HEAD)"

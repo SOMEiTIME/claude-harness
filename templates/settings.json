@@ -5,6 +5,9 @@
       "Read(//**/*.key)"
     ]
   },
+  "env": {
+    "YARN_CACHE_FOLDER": "~/.cache/yarn-sandbox"
+  },
   "permissions": {
     "deny": [
       "Bash(sudo *)",
@@ -48,6 +51,11 @@
       "git push *",
       "gh pr *"
     ],
+    "filesystem": {
+      "allowWrite": [
+        "~/.cache/yarn-sandbox"
+      ]
+    },
     "network": {
       "allowedDomains": [
         "github.com",
