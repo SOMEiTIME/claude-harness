@@ -26,9 +26,13 @@ How the layers fit:
 
 Run these yourself (with `!` inside Claude Code), because the sandbox stops Claude from writing to `~/.claude`:
 ```
-~/Documents/GitHub/claude-harness/install.sh --dry-run   # show what would change
-~/Documents/GitHub/claude-harness/install.sh             # do it
+~/.claude/hooks/claude-harness/install-from-github.sh --dry-run   # show what would change
+~/.claude/hooks/claude-harness/install-from-github.sh             # do it
 ```
+It clones `main` from GitHub into a temp folder and runs that `install.sh`, never the local clone. Claude can write to `~/Documents/GitHub/claude-harness` and move its local branches, and `install.sh` runs outside the sandbox, so installing from the local clone would run whatever a session left there. `main` on GitHub only changes when you merge a PR (the ruleset blocks direct pushes), so reviewing the PR is the review of what gets installed. The dry run shows full diffs of the scripts as well as the settings.
+
+The first time, before `install-from-github.sh` is in `~/.claude`, run `install.sh` from a clone of `main` you've checked.
+
 It's idempotent. Merging only adds entries, so to drop a rule an earlier version added, list it under `claudeHarnessRemove` in `templates/settings.json`. To undo everything, delete the `sandbox`, `hooks` and harness deny entries from `~/.claude/settings.json` (or restore `settings.json.bak-20261018`), delete `~/.claude/hooks/claude-harness/`, and remove the marked section from `~/.claude/CLAUDE.md`.
 
 ## Give a repo a verify script
