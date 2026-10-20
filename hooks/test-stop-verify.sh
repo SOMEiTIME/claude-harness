@@ -13,8 +13,7 @@ trap 'rm -rf "$tmp"' EXIT
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 
-# new_repo <name>: a clone of a fresh origin with whatever's in .claude/ (if
-# anything) committed on main, and cd into it.
+# new_repo <name>: clone a fresh origin with one empty commit on main, and cd into it.
 new_repo() {
   git init -q --bare "$tmp/$1.git"
   git clone -q "$tmp/$1.git" "$tmp/$1" 2>/dev/null
@@ -109,6 +108,13 @@ mkdir .claude && printf '#!/usr/bin/env bash\nexit 0\n' >.claude/verify.sh && ch
 printf '.claude/\n' >.git/info/exclude
 expect 2 "new verify.sh blocks, even when ignored"
 grep -q "human review required" "$tmp/stderr" || fail "new verify.sh reason missing"
+
+# A local-only repo: no origin, so no base to compare against.
+mkdir "$tmp/local" && cd "$tmp/local" && git init -q && git commit -q --allow-empty -m init
+repo="$tmp/local"
+expect 0 "clean local-only repo with no test command allows the stop"
+echo work >file.txt
+expect 2 "work in a local-only repo with no test command blocks"
 
 printf 'not json' | "$hook" 2>/dev/null
 [ $? -eq 0 ] || fail "unparseable input should allow the stop"

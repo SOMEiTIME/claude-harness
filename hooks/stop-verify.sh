@@ -56,6 +56,8 @@ fi
 
 [ -x "$hook_dir/detect-verify.sh" ] || exit 0
 cmd="$("$hook_dir/detect-verify.sh" "$repo_root")"
+# With no default branch, a clean tree is the only sign of no work.
+[ -z "$cmd" ] && [ -z "$default_ref" ] && [ -z "$dirty" ] && exit 0
 if [ -z "$cmd" ]; then
   echo "No test command for this repo. Add .claude/verify.sh or a supported test entry point." >&2
   exit 2

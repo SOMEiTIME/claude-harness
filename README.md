@@ -63,5 +63,7 @@ Written for bash 3.2 (macOS); no jq needed. They work inside the sandbox.
 - Yarn downloads inside the sandbox can still abort when a package isn't cached yet (see "The sandbox's yarn cache" above; the cause in the proxy or yarn's HTTP client isn't pinned down). Retry, or run `yarn install` yourself with `!`. Yarn 1 leaves half-written cache entries behind; if errors name `.yarn-metadata.json`, delete those entries from `~/.cache/yarn-sandbox/v6`.
 - Inside the sandbox, `gh` commands other than `gh pr`, `docker`, `open`, and starting another `claude` fail. Run them yourself with `!`.
 - Only `.claude/verify.sh` is protected from Claude's edits. Detected entry points (a `package.json` test script, a Makefile target, CMake test definitions) can be weakened in the same diff they're supposed to check; review those changes too.
+- Detected test commands (`npm test`, `make test`, `cmake ...`) run outside the sandbox, like verify.sh, and run code from files Claude can edit.
+- In a repo with no `origin/HEAD`, `origin/main` or `origin/master`, the verify.sh check compares against HEAD, so an edit Claude commits there isn't caught.
 - The fail-closed blocks only cost one retry per turn (then `stop_hook_active` lets Claude stop), so they're a loud warning, not a wall.
 - The jq path in `json-field.sh` is untested; the python3 and node paths are tested.
