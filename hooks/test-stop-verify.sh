@@ -5,7 +5,7 @@
 
 hook="${1:-$(dirname "$0")/stop-verify.sh}"
 hook="$(cd "$(dirname "$hook")" && pwd)/$(basename "$hook")"
-tmp="$(mktemp -d)"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/claude-harness-test.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
 git init -q --bare "$tmp/origin.git"
@@ -54,7 +54,12 @@ expect 0 "unchanged tree after a pass skips verify"
 echo more >>file.txt
 expect 2 "new changes after a pass are verified again"
 
+set_verify '[ -z "${YARN_CACHE_FOLDER+set}" ] || { echo "YARN_CACHE_FOLDER leaked" >&2; exit 1; }'
+echo again >>file.txt
+YARN_CACHE_FOLDER="$tmp/sandbox-cache" expect 0 "verify doesn't see the sandbox's yarn cache"
+
 set_verify 'sleep 30'
+echo hang >>file.txt
 start=$(date +%s)
 VERIFY_TIMEOUT=2 expect 2 "hung verify times out and blocks"
 grep -q "timed out" "$tmp/stderr" || { echo "FAIL: timeout reason missing"; failures=$((failures + 1)); }

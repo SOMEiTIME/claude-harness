@@ -1,6 +1,16 @@
 {
+  "claudeHarnessRemove": {
+    "permissions.deny": [
+      "Read(//**/*.pem)",
+      "Read(//**/*.key)"
+    ]
+  },
+  "env": {
+    "YARN_CACHE_FOLDER": "~/.cache/yarn-sandbox"
+  },
   "permissions": {
     "deny": [
+      "Bash(sudo *)",
       "Bash(git push *--force*)",
       "Bash(git push -f*)",
       "Bash(git push * -f*)",
@@ -16,19 +26,49 @@
       "Bash(git push *:refs/heads/main)",
       "Bash(git push *:refs/heads/master)",
       "Bash(git reset --hard origin/*)",
-      "Bash(git branch * main)",
-      "Bash(git branch * master)",
-      "Read(**/.env)",
-      "Read(**/.env.*)",
-      "Read(**/*.pem)",
-      "Read(**/*.key)",
-      "Read(**/id_rsa*)",
-      "Read(**/id_ed25519*)",
+      "Read(//**/.env)",
+      "Read(//**/.env.*)",
+      "Read(~/**/*.pem)",
+      "Read(~/**/*.key)",
+      "Read(//**/id_rsa*)",
+      "Read(//**/id_ed25519*)",
       "Read(~/.ssh/**)",
       "Read(~/.aws/**)",
       "Read(~/.netrc)",
-      "Read(~/.git-credentials)"
+      "Read(~/.git-credentials)",
+      "Bash(git branch -d main)",
+      "Bash(git branch -D main)",
+      "Bash(git branch --delete main)",
+      "Bash(git branch -d master)",
+      "Bash(git branch -D master)",
+      "Bash(git branch --delete master)",
+      "Bash(* --host)",
+      "Bash(* --host *)",
+      "Bash(* --host=*)",
+      "Bash(*0.0.0.0*)"
     ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "allowUnsandboxedCommands": false,
+    "excludedCommands": [
+      "git push *",
+      "gh pr *"
+    ],
+    "filesystem": {
+      "allowWrite": [
+        "~/.cache/yarn-sandbox"
+      ]
+    },
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "api.github.com",
+        "registry.yarnpkg.com",
+        "registry.npmjs.org"
+      ]
+    },
+    "failIfUnavailable": true
   },
   "hooks": {
     "PreToolUse": [
@@ -37,7 +77,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/block-dangerous.sh",
+            "command": "\"$HOME\"/.claude/hooks/claude-harness/block-dangerous.sh",
             "timeout": 10
           }
         ]
@@ -48,7 +88,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/stop-verify.sh",
+            "command": "\"$HOME\"/.claude/hooks/claude-harness/stop-verify.sh",
             "timeout": 600
           }
         ]

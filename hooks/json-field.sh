@@ -2,14 +2,14 @@
 # Print one field of the JSON object on stdin, e.g. `json-field.sh tool_input.command`.
 # Strings print raw, other values as JSON (true, 42), missing fields as nothing.
 # Uses jq, python3 or node, whichever is installed first. Exits 1 if none is
-# installed or the JSON doesn't parse, so callers can fail open.
+# installed or the JSON doesn't parse, so callers can decide what to do then.
 
 path="$1"
 
 if command -v jq >/dev/null 2>&1; then
   jq -er --arg p "$path" 'getpath($p | split(".")) // empty | if type == "string" then . else tojson end'
   rc=$?
-  # jq -e exits 1 for a missing/null field and 4 for no input; both just mean "no value".
+  # jq -e exits 1 for a null/false result and 4 when it produces no result; both mean "no value".
   [ $rc -eq 1 ] || [ $rc -eq 4 ] && exit 0
   exit $rc
 elif command -v python3 >/dev/null 2>&1; then
