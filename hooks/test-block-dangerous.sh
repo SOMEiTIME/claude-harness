@@ -58,6 +58,13 @@ blocked 'find . -name x | xargs rm -rf ~'
 blocked 'cd ~ && rm -rf Documents'
 blocked 'cd / && rm -rf usr'
 blocked 'cd $SOMEWHERE && rm -rf build'
+# Known conservative behavior: the hook splits on ; & | and so on without parsing
+# quotes, so a separator inside a string starts a new "command". Text that only
+# mentions rm -rf is blocked when it follows one. Pinned so loosening it is deliberate.
+blocked 'echo "build && rm -rf ~/old"'
+blocked "printf '%s' 'x; rm -rf /usr'"
+blocked 'echo "a && rm -rf $TARGET"'
+allowed 'echo "rm -rf ~"'
 allowed 'rm -rf dist'
 allowed 'rm -rf node_modules dist/'
 allowed "rm -rf $repo/build"
