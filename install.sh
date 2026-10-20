@@ -2,7 +2,7 @@
 # Install the guardrails for every Claude Code session on this machine:
 #   install.sh            install or update
 #   install.sh --dry-run  show what would change, write nothing
-# - copies the hooks into ~/.claude/hooks/claude-harness/
+# - copies the hooks and install-from-github.sh into ~/.claude/hooks/claude-harness/
 # - merges templates/settings.json into ~/.claude/settings.json (lists are
 #   unioned, existing keys and values win)
 # - adds the guardrails section to ~/.claude/CLAUDE.md, or refreshes it
@@ -10,6 +10,8 @@
 # Idempotent: a second run changes nothing. Needs python3 for the merges.
 # Run it yourself (with `!` inside Claude Code): the sandbox stops Claude's
 # shell from writing to ~/.claude, which is what keeps the guardrails safe.
+# After the first install, update with ~/.claude/hooks/claude-harness/install-from-github.sh,
+# which runs this script from main on GitHub rather than from a clone Claude can edit.
 # Repos get their test command separately, with add-verify.sh.
 set -euo pipefail
 
@@ -35,15 +37,10 @@ write_if_changed() {
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/claude-harness-install.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
-for hook in block-dangerous.sh stop-verify.sh json-field.sh; do
-  target="$claude_dir/hooks/claude-harness/$hook"
-  if ! cmp -s "$harness/hooks/$hook" "$target"; then
-    echo "== hooks/claude-harness/$hook ($([ -f "$target" ] && echo updated || echo new))"
-    if [ -z "$dry_run" ]; then
-      mkdir -p "$(dirname "$target")"
-      cp "$harness/hooks/$hook" "$target"
-    fi
-  fi
+# Scripts get full diffs too, since they're what runs outside the sandbox.
+for script in hooks/block-dangerous.sh hooks/stop-verify.sh hooks/json-field.sh install-from-github.sh; do
+  target="$claude_dir/hooks/claude-harness/$(basename "$script")"
+  write_if_changed "$target" "$harness/$script" "hooks/claude-harness/$(basename "$script")"
   [ -n "$dry_run" ] || chmod +x "$target"
 done
 

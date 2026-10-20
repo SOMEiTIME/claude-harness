@@ -17,6 +17,7 @@ Cloud sessions don't get these (they only see the repo). They run in isolated VM
 How the layers fit:
 - **The sandbox** protects the machine. macOS enforces it on every shell command and everything those commands start: writes only inside the current project and temp folders, network only to `allowedDomains`. It blocks things no pattern can catch, like `python -c "shutil.rmtree(...)"`. `allowUnsandboxedCommands: false` takes away Claude's "retry outside the sandbox" fallback, and `failIfUnavailable` stops Claude Code from starting if the sandbox can't. It also stops Claude's shell from writing to `~/.claude`, so Claude can't edit these guardrails. Only `git push *` and `gh pr *` run outside it (they need the keychain), and only as the whole command, not chained.
 - **The sandbox's yarn cache.** Yarn's normal cache isn't writable in the sandbox, so `YARN_CACHE_FOLDER` points sandboxed yarn at `~/.cache/yarn-sandbox`. Because it persists, installs mostly skip the network, where yarn 1's downloads through the sandbox proxy sometimes abort (mostly the ~4 MB `@esbuild/*` tarballs). The normal cache stays off limits on purpose: yarn trusts cached packages without rechecking them, so a package planted from inside the sandbox would get installed outside it. For the same reason the Stop hook unsets `YARN_CACHE_FOLDER` before running verify.
+- **Local ports.** `network.allowLocalBinding` lets sandboxed commands listen on localhost (macOS only), so dev servers and browser checks work. The trade-off: your real browser is on localhost too. A compromised dependency could read whatever the sandbox can read and serve it on a local port, and a hostile page in a normal tab could reach that port by DNS rebinding or a cross-origin request and carry the data past the network filter. That takes a malicious package and a hostile page at the same time, so it's unlikely, but it's why: dev servers must never use `--host`/`0.0.0.0`, Vite should stay current (its CORS and file-serving bugs are this attack), and the read-deny list should stay broad. A separate browser profile for dev-server testing helps too.
 - **The hook** covers what the sandbox doesn't: pushes, git history, secrets inside the project. It's pattern matching, so unusual spellings can get past it.
 - **Deny rules** are a second net for the same cases. Read rules also become sandbox read blocks, so keep them narrow: an earlier `Read(//**/*.pem)` blocked `/etc/ssl/cert.pem` and broke HTTPS for every command.
 - **GitHub rulesets** (require PR, block force push and deletion, no admin bypass) are the hard stop for pushes, locally and in the cloud.
@@ -25,9 +26,13 @@ How the layers fit:
 
 Run these yourself (with `!` inside Claude Code), because the sandbox stops Claude from writing to `~/.claude`:
 ```
-~/Documents/GitHub/claude-harness/install.sh --dry-run   # show what would change
-~/Documents/GitHub/claude-harness/install.sh             # do it
+~/.claude/hooks/claude-harness/install-from-github.sh --dry-run   # show what would change
+~/.claude/hooks/claude-harness/install-from-github.sh             # do it
 ```
+It clones `main` from GitHub into a temp folder and runs that `install.sh`, never the local clone. Claude can write to `~/Documents/GitHub/claude-harness` and move its local branches, and `install.sh` runs outside the sandbox, so installing from the local clone would run whatever a session left there. `main` on GitHub only changes when you merge a PR (the ruleset blocks direct pushes), so reviewing the PR is the review of what gets installed. The dry run shows full diffs of the scripts as well as the settings.
+
+The first time, before `install-from-github.sh` is in `~/.claude`, run `install.sh` from a clone of `main` you've checked.
+
 It's idempotent. Merging only adds entries, so to drop a rule an earlier version added, list it under `claudeHarnessRemove` in `templates/settings.json`. To undo everything, delete the `sandbox`, `hooks` and harness deny entries from `~/.claude/settings.json` (or restore `settings.json.bak-20261018`), delete `~/.claude/hooks/claude-harness/`, and remove the marked section from `~/.claude/CLAUDE.md`.
 
 ## Give a repo a verify script
