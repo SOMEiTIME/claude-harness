@@ -12,7 +12,8 @@
 # shell from writing to ~/.claude, which is what keeps the guardrails safe.
 # After the first install, update with ~/.claude/hooks/claude-harness/install-from-github.sh,
 # which runs this script from main on GitHub rather than from a clone Claude can edit.
-# Repos get their test command separately, with add-verify.sh.
+# Repos get their test command from .claude/verify.sh (see add-verify.sh) or
+# one detect-verify.sh recognizes.
 set -euo pipefail
 
 harness="$(cd "$(dirname "$0")" && pwd)"
@@ -38,7 +39,7 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/claude-harness-install.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
 # Scripts get full diffs too, since they're what runs outside the sandbox.
-for script in hooks/block-dangerous.sh hooks/stop-verify.sh hooks/json-field.sh install-from-github.sh; do
+for script in hooks/block-dangerous.sh hooks/stop-verify.sh hooks/detect-verify.sh hooks/json-field.sh install-from-github.sh; do
   target="$claude_dir/hooks/claude-harness/$(basename "$script")"
   write_if_changed "$target" "$harness/$script" "hooks/claude-harness/$(basename "$script")"
   [ -n "$dry_run" ] || chmod +x "$target"
