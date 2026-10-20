@@ -9,7 +9,7 @@
 
 ## Public repos
 
-Everything I push to GitHub is public (github.com/SOMEiTIME). Treat every file, commit message, branch name, PR title/body and issue comment as published permanently, because git history keeps it.
+Assume everything I push is public (github.com/SOMEiTIME). Treat every file, commit message, branch name, PR title/body and issue comment as published permanently, because git history keeps it.
 
 Never put these in a file, commit, or PR:
 - My full name, email addresses, phone numbers, home address, employer, school, or location. Use "the author" or point at an existing file instead of quoting a header.
