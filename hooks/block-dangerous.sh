@@ -2,6 +2,7 @@
 # PreToolUse hook for Bash. Reads the hook JSON on stdin and exits 2 (block,
 # reason on stderr) for commands that are hard to undo or leak secrets:
 #   - recursive rm of /, ~, $VARS, .., the repo root, .git, or anything outside the repo
+#     (also when wrapped in bash -c, eval, a pipe to sh, or just quoted in an echo)
 #   - force pushes, pushes to main/master, git reset --hard to a remote branch,
 #     deleting main/master
 #   - commands that name .env files, keys or credential files
@@ -213,6 +214,18 @@ resolve_cd() {
     echo "$target"
   fi
 }
+
+# Every `rm` in the command text, wherever it appears (bash -c "...", eval, echo ... | sh,
+# a quoted string). Nothing legitimate spells out a destructive rm it doesn't run, so this
+# errs on the side of blocking. Relative targets are checked against the starting directory;
+# the per-command pass below follows cd.
+text_lines="$(printf '%s\n' "$command" | tr ';&|()`' '\n' | tr "\"'" '  ')"
+while IFS= read -r line; do
+  read -ra text_words <<<"$line"
+  for i in "${!text_words[@]}"; do
+    [ "${text_words[$i]##*/}" = rm ] && check_rm "${text_words[@]:$((i + 1))}"
+  done
+done <<<"$text_lines"
 
 # Split into simple commands at ; & | && || newlines and $( ( ) `, then check each.
 segments="$(printf '%s\n' "$command" | awk '{ gsub(/&&|\|\||[;&|`()]/, "\n"); print }')"
