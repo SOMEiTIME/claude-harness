@@ -41,7 +41,11 @@
       "Bash(git branch --delete main)",
       "Bash(git branch -d master)",
       "Bash(git branch -D master)",
-      "Bash(git branch --delete master)"
+      "Bash(git branch --delete master)",
+      "Bash(* --host)",
+      "Bash(* --host *)",
+      "Bash(* --host=*)",
+      "Bash(*0.0.0.0*)"
     ]
   },
   "sandbox": {
