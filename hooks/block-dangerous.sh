@@ -142,7 +142,8 @@ check_git() {
         case "$word" in
           --force*|--force-with-lease*|--force-if-includes) block "force pushes are not allowed" ;;
           --mirror|--all) block "git push $word would push main/master too" ;;
-          -o|--push-option|--repo|--receive-pack|--exec) shift ;;
+          --receive-pack*|--exec*) block "git push $word runs a command outside the sandbox" ;;
+          -o|--push-option|--repo) shift ;;
           --*) ;;
           -*) [[ $word == *f* ]] && block "force pushes are not allowed" ;;
           +*) block "a +refspec is a force push" ;;
@@ -163,6 +164,15 @@ check_git() {
         current="$(current_branch "$git_dir")"
         is_main "$current" && block "a bare git push from $current would push to $current; push a branch and open a PR"
       fi
+      ;;
+    fetch)
+      # git fetch runs outside the sandbox (settings.json), so nothing may make it run a command.
+      for word in "$@"; do
+        case "$word" in
+          --upload-pack*) block "git fetch $word runs a command outside the sandbox" ;;
+          ext::*) block "an ext:: remote runs a command outside the sandbox" ;;
+        esac
+      done
       ;;
     branch)
       local deleting="" names=""
