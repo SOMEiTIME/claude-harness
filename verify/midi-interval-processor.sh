@@ -12,7 +12,7 @@ if grep -q "warning:" <<<"$build_log"; then
   echo "Build has warnings; the code is meant to stay warning-free." >&2
   exit 1
 fi
-if echo '#include <gtest/gtest.h>' | g++ -std=c++11 -x c++ -fsyntax-only - >/dev/null 2>&1; then
+if echo '#include <gtest/gtest.h>' | g++ -std=c++17 -x c++ -fsyntax-only - >/dev/null 2>&1; then
   make test
 else
   echo "gtest not installed; skipped make test (run it in Docker: docker build ./ --tag midi_interval_tests)"

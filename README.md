@@ -51,7 +51,7 @@ and commit `.claude/verify.sh` in the repo on a branch.
 hooks/test-block-dangerous.sh [path/to/block-dangerous.sh]
 hooks/test-stop-verify.sh [path/to/stop-verify.sh]
 ```
-Written for bash 3.2 (macOS); no jq needed. They work inside the sandbox.
+Written for bash 3.2 (macOS); no jq needed. They work inside the sandbox. This repo's own `.claude/verify.sh` (from `verify/claude-harness.sh`) syntax-checks every script and runs both.
 
 ## Known gaps
 
