@@ -12,7 +12,10 @@ Needs macOS (the sandbox uses Seatbelt), bash, git, and one of jq, python3 or no
 | :- | :- |
 | `~/.claude/settings.json` | Turns on the Bash **sandbox** (with its own yarn cache, see below), adds **deny rules** (`sudo`, force/main pushes, `reset --hard origin/...`, deleting main/master, reading `.env`/key/credential files, and editing or writing `.env` and the credential files), and registers the two hooks. Merged into your existing settings: lists are unioned, your own values win. |
 | `~/.claude/hooks/claude-harness/block-dangerous.sh` | Runs before every Bash command and blocks (exit 2, with the reason) force pushes, pushes to main/master (including `HEAD`/`@` from main), deleting main/master, `git reset --hard origin/...`, recursive `rm` of `/`, `~`, `$VARS`, `..`, the repo, `.git` or anything outside the repo (it follows `cd`), commands naming secret files, `curl ... \| sh`, and the git options that run a command (`push --receive-pack`/`--exec`, `fetch --upload-pack`, `ext::` remotes), since push and fetch run outside the sandbox. If it can't read its input, it blocks everything. |
-| `~/.claude/hooks/claude-harness/stop-verify.sh` | Runs when Claude ends a turn. In a repo with `.claude/verify.sh` and work on the branch (uncommitted changes, or commits not on the default branch), it runs the script and, on failure, sends Claude back with the last 40 lines. One forced retry per turn, passes are cached per tree state, and verify is killed after 540s. |
+| `~/.claude/hooks/claude-harness/stop-verify.sh` | Runs when Claude ends a turn. In a repo with work on the branch (uncommitted changes, or commits not on the default branch), it runs the repo's test command and, on failure, sends Claude back with the last 40 lines. One forced retry per turn, passes are cached per tree state, and the test command is killed after 540s. |
+| | Work in a repo with no test command blocks the stop: "No test command for this repo. Add .claude/verify.sh or a supported test entry point." |
+| | A `.claude/verify.sh` that differs from the branch's base (edited, added, deleted, even untracked or ignored) blocks the stop: Claude mustn't write its own gate. |
+| `~/.claude/hooks/claude-harness/detect-verify.sh` | Prints the repo's test command, first match wins: `.claude/verify.sh` (run with `bash` if not executable), a real `test` script in `package.json` (yarn/pnpm/npm by lockfile), `cargo test`, `go test ./...`, pytest config, a Makefile `test:` target, a CMake build dir with `CTestTestfile.cmake`, or `CMakeLists.txt` with `enable_testing()`/`include(CTest)` (both build, then `ctest`). |
 | `~/.claude/hooks/claude-harness/json-field.sh` | Reads the hook input with jq, python3 or node, whichever exists. |
 | `~/.claude/CLAUDE.md` | A short "Guardrails" section and a "Public repos" section (between `<!-- claude-harness:start/end -->` markers) telling Claude what's in place and what never goes into a public commit. |
 
@@ -39,7 +42,7 @@ It's idempotent. Merging only adds entries, so to drop a rule an earlier version
 
 ## Give a repo a verify script
 
-The scripts in `verify/` are for the author's own repos; use them as examples. Write `verify/<repo-name>.sh` here (tests, build; exit non-zero on failure), then:
+The scripts in `verify/` are for the author's own repos; use them as examples. Repos with a test entry point `detect-verify.sh` knows don't need one, but a verify script can also build, lint, or anything else. Write `verify/<repo-name>.sh` here (tests, build; exit non-zero on failure), then:
 ```
 ./add-verify.sh /path/to/repo
 ```
@@ -59,4 +62,8 @@ Written for bash 3.2 (macOS); no jq needed. They work inside the sandbox. This r
 - `.env.example` is blocked too, to match the `.env.*` deny rule (deny rules can't make exceptions).
 - Yarn downloads inside the sandbox can still abort when a package isn't cached yet (see "The sandbox's yarn cache" above; the cause in the proxy or yarn's HTTP client isn't pinned down). Retry, or run `yarn install` yourself with `!`. Yarn 1 leaves half-written cache entries behind; if errors name `.yarn-metadata.json`, delete those entries from `~/.cache/yarn-sandbox/v6`.
 - Inside the sandbox, `gh` commands other than `gh pr`, `docker`, `open`, and starting another `claude` fail. Run them yourself with `!`.
+- Only `.claude/verify.sh` is protected from Claude's edits. Detected entry points (a `package.json` test script, a Makefile target, CMake test definitions) can be weakened in the same diff they're supposed to check; review those changes too.
+- Detected test commands (`npm test`, `make test`, `cmake ...`) run outside the sandbox, like verify.sh, and run code from files Claude can edit.
+- In a repo with no `origin/HEAD`, `origin/main` or `origin/master`, the verify.sh check compares against HEAD, so an edit Claude commits there isn't caught.
+- The fail-closed blocks only cost one retry per turn (then `stop_hook_active` lets Claude stop), so they're a loud warning, not a wall.
 - The jq path in `json-field.sh` is untested; the python3 and node paths are tested.
