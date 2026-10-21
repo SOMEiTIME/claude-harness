@@ -59,6 +59,7 @@
     "allowUnsandboxedCommands": false,
     "excludedCommands": [
       "git push *",
+      "git fetch *",
       "gh pr *"
     ],
     "filesystem": {
