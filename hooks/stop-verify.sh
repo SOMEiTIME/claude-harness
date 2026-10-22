@@ -110,7 +110,8 @@ else
   summary="failed (exit $status)"
 fi
 {
-  echo "\`$cmd\` $summary. The work isn't done until it passes; fix it, or tell the user why it can't pass. Last 40 lines:"
+  echo "\`$cmd\` $summary. The work isn't done until it passes; fix it, or tell the user why it can't pass."
+  echo "It ran in the verify sandbox (no network; writes only to the repo and temp). If the sandbox caused the failure, tell the user rather than changing tests. Last 40 lines:"
   tail -n 40 "$log"
 } >&2
 exit 2

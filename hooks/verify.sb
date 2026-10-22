@@ -21,14 +21,19 @@
   (literal "/dev/tty")
   (literal "/dev/stdout")
   (literal "/dev/stderr")
+  (literal "/dev/dtracehelper")
+  (literal "/dev/autofs_nowait")
   (regex #"^/dev/fd/")
   (regex #"^/dev/ttys[0-9]+$"))
 ;; A planted git hook or config (core.hooksPath, core.fsmonitor, ...) would run
-;; later in git push, which is unsandboxed.
+;; later in git push, which is unsandboxed. That covers submodules' git dirs
+;; too, and moving the repo or its git dir, which would let a .git file point
+;; git at a new git dir.
 (deny file-write*
-  (subpath (string-append (param "GIT_DIR") "/hooks"))
-  (literal (string-append (param "GIT_DIR") "/config"))
-  (require-all (subpath (param "GIT_DIR")) (regex #"/config\.worktree$")))
+  (literal (param "REPO"))
+  (literal (param "GIT_DIR"))
+  (require-all (subpath (param "GIT_DIR")) (regex #"/(config|config\.worktree|commondir)$"))
+  (require-all (subpath (param "GIT_DIR")) (regex #"/hooks(/|$)")))
 
 (deny network-outbound)
 (allow network-outbound

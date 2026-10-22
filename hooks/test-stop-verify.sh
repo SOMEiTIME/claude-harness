@@ -106,6 +106,8 @@ if [ -n "$real_sandbox" ]; then
   [ -e "$probe" ] && { rm -f "$probe"; fail "verify wrote outside the repo"; }
   sandbox_check "can't plant a git hook" "! touch .git/hooks/pre-push 2>/dev/null"
   sandbox_check "can't change git config" "! git config --local core.hooksPath x 2>/dev/null"
+  sandbox_check "can't move .git" "! mv .git .git-moved 2>/dev/null"
+  [ -d .git-moved ] && { mv .git-moved .git; fail "verify moved .git"; }
   sandbox_check "can still stage files" "git add inside.txt"
   echo SECRET=1 >.env
   sandbox_check "can't read .env" "! cat .env 2>/dev/null"
