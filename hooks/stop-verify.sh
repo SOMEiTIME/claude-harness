@@ -7,6 +7,8 @@
 # - Stop fires at the end of every turn, so verify only runs when the branch
 #   has work on it (uncommitted changes, or commits not on the default branch)
 #   and that work changed since the last passing run.
+# - The test command runs under sandbox-exec with verify.sb; if that can't
+#   happen, it blocks instead of running it unsandboxed.
 # - If this stop was already forced by a Stop hook (stop_hook_active), it lets
 #   Claude stop: one forced retry per turn, then it's back to the user.
 # - The test command is killed after VERIFY_TIMEOUT seconds (default 540, under
@@ -27,10 +29,6 @@ cwd="$(printf '%s' "$input" | "$hook_dir/json-field.sh" cwd)"
 [ -d "$cwd" ] || cwd="${CLAUDE_PROJECT_DIR:-$PWD}"
 repo_root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 cd "$repo_root" || exit 0
-# Settings' env points yarn at a cache sandboxed commands can write to. Verify
-# runs outside the sandbox, so it uses the normal cache: nothing written from
-# inside the sandbox gets installed unsandboxed.
-unset YARN_CACHE_FOLDER
 
 # Is there any work on this branch? Compare against origin's default branch.
 default_ref="$(git symbolic-ref -q --short refs/remotes/origin/HEAD)"
@@ -74,12 +72,25 @@ fingerprint() {
 stamp="$(git rev-parse --git-path claude-verify-passed)"
 [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$(fingerprint)" ] && exit 0
 
+# The test command runs code Claude can edit, and hooks run outside Claude's
+# sandbox, so verify gets its own (verify.sb). No sandbox, no verify.
+profile="$hook_dir/verify.sb"
+if [ ! -f "$profile" ] || ! sandbox-exec -p '(version 1)(allow default)' /usr/bin/true 2>/dev/null; then
+  echo "Can't sandbox the test command (sandbox-exec or $profile unavailable), so it didn't run. Tell the user." >&2
+  exit 2
+fi
+tmp_dir="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+git_dir="$(cd "$(git rev-parse --git-common-dir)" && pwd -P)"
+# The sandbox can't write yarn's normal cache, so point yarn at the sandbox's.
+export YARN_CACHE_FOLDER="$HOME/.cache/yarn-sandbox" CLAUDE_HARNESS_VERIFY_SANDBOXED=1
+
 # Run verify in its own process group so a timeout kills everything it started.
-log="$(mktemp "${TMPDIR:-/tmp}/claude-verify.XXXXXX")"
+log="$(mktemp "$tmp_dir/claude-verify.XXXXXX")"
 trap 'rm -f "$log"' EXIT
 timeout_secs="${VERIFY_TIMEOUT:-540}"
 set -m
-bash -c "$cmd" >"$log" 2>&1 </dev/null &
+sandbox-exec -f "$profile" -D REPO="$(pwd -P)" -D GIT_DIR="$git_dir" -D TMP="$tmp_dir" \
+  -D HOME="$(cd "$HOME" && pwd -P)" bash -c "$cmd" >"$log" 2>&1 </dev/null &
 verify_pid=$!
 (sleep "$timeout_secs" && kill -TERM -- -"$verify_pid" 2>/dev/null) &
 watchdog_pid=$!

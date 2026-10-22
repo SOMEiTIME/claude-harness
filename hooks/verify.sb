@@ -1,0 +1,49 @@
+;; Seatbelt profile for the Stop hook's test command (stop-verify.sh runs it
+;; with sandbox-exec). Mirrors Claude's Bash sandbox in templates/settings.json,
+;; since the test command runs code Claude can edit:
+;; - writes: the repo (but not its git hooks or config), temp, the sandbox's
+;;   yarn cache and npm logs
+;; - network: localhost only (Seatbelt can't filter by domain)
+;; - reads: not the secret files the settings deny, nor the keychain
+;; Parameters (real paths, no trailing slash): REPO, GIT_DIR (the common git
+;; dir), TMP, HOME. Allow everything else, then deny; the last matching rule wins.
+(version 1)
+(allow default)
+
+(deny file-write*)
+(allow file-write*
+  (subpath (param "REPO"))
+  (subpath (param "TMP"))
+  (subpath "/private/tmp")
+  (subpath (string-append (param "HOME") "/.cache/yarn-sandbox"))
+  (subpath (string-append (param "HOME") "/.npm/_logs"))
+  (literal "/dev/null")
+  (literal "/dev/tty")
+  (literal "/dev/stdout")
+  (literal "/dev/stderr")
+  (regex #"^/dev/fd/")
+  (regex #"^/dev/ttys[0-9]+$"))
+;; A planted git hook or config (core.hooksPath, core.fsmonitor, ...) would run
+;; later in git push, which is unsandboxed.
+(deny file-write*
+  (subpath (string-append (param "GIT_DIR") "/hooks"))
+  (literal (string-append (param "GIT_DIR") "/config"))
+  (require-all (subpath (param "GIT_DIR")) (regex #"/config\.worktree$")))
+
+(deny network-outbound)
+(allow network-outbound
+  (remote ip "localhost:*")
+  (literal "/private/var/run/syslog"))
+
+(deny file-read*
+  (regex #"/\.env$" #"/\.env\.[^/]*$" #"/id_rsa[^/]*$" #"/id_ed25519[^/]*$")
+  (subpath (string-append (param "HOME") "/.ssh"))
+  (subpath (string-append (param "HOME") "/.aws"))
+  (literal (string-append (param "HOME") "/.netrc"))
+  (literal (string-append (param "HOME") "/.git-credentials"))
+  (subpath (string-append (param "HOME") "/Library/Keychains"))
+  (require-all (subpath (param "HOME")) (regex #"\.(pem|key)$")))
+;; The keychain daemon, which hands out stored passwords (like git's GitHub token).
+(deny mach-lookup
+  (global-name "com.apple.SecurityServer")
+  (global-name "com.apple.securityd"))

@@ -38,8 +38,9 @@ write_if_changed() {
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/claude-harness-install.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
-# Scripts get full diffs too, since they're what runs outside the sandbox.
-for script in hooks/block-dangerous.sh hooks/stop-verify.sh hooks/detect-verify.sh hooks/json-field.sh install-from-github.sh; do
+# Scripts and the verify sandbox profile get full diffs too: they run outside
+# Claude's sandbox or decide what verify can do.
+for script in hooks/block-dangerous.sh hooks/stop-verify.sh hooks/verify.sb hooks/detect-verify.sh hooks/json-field.sh install-from-github.sh; do
   target="$claude_dir/hooks/claude-harness/$(basename "$script")"
   write_if_changed "$target" "$harness/$script" "hooks/claude-harness/$(basename "$script")"
   [ -n "$dry_run" ] || chmod +x "$target"
