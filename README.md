@@ -42,11 +42,11 @@ It's idempotent. Merging only adds entries, so to drop a rule an earlier version
 
 ## Give a repo a verify script
 
-The scripts in `verify/` are for the author's own repos; use them as examples. Repos with a test entry point `detect-verify.sh` knows don't need one, but a verify script can also build, lint, or anything else. Write `verify/<repo-name>.sh` here (tests, build; exit non-zero on failure), then:
+Each repo keeps its verify script in its own `.claude/verify.sh`; `verify/` here only holds this repo's. Repos with a test entry point `detect-verify.sh` knows don't need one, but a verify script can also build, lint, or anything else. To add one, write `verify/<repo-name>.sh` here (tests, build; exit non-zero on failure), then:
 ```
 ./add-verify.sh /path/to/repo
 ```
-and commit `.claude/verify.sh` in the repo on a branch.
+commit `.claude/verify.sh` in the repo on a branch, and delete the copy here once it's merged, so there's only one to keep up to date.
 
 ## Test
 
