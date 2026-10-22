@@ -66,7 +66,7 @@ Written for bash 3.2 (macOS); no jq needed. They work inside the sandbox. This r
 - Inside the sandbox, `gh` commands other than `gh pr`, `docker`, `open`, and starting another `claude` fail. Run them yourself with `!`.
 - Only `.claude/verify.sh` is protected from Claude's edits. Detected entry points (a `package.json` test script, a Makefile target, CMake test definitions) can be weakened in the same diff they're supposed to check; review those changes too.
 - The verify sandbox's own checks in `test-stop-verify.sh` only run outside a sandbox, because Seatbelt sandboxes can't nest. Inside Claude's sandbox or a sandboxed verify run they're skipped with a note, so once this version is installed they only run when you run the tests yourself with `!`.
-- The verify sandbox's keychain block is only checked by a lookup of a missing item not answering "not found"; it isn't tested against a real stored password.
+- The verify sandbox's keychain block (denying the `securityd` lookups) is untested. `security find-generic-password` answers "not found" whether or not it can reach the keychain, and testing with a real stored password would put it in the test output.
 - In a repo with no `origin/HEAD`, `origin/main` or `origin/master`, the verify.sh check compares against HEAD, so an edit Claude commits there isn't caught.
 - The fail-closed blocks only cost one retry per turn (then `stop_hook_active` lets Claude stop), so they're a loud warning, not a wall.
 - The jq path in `json-field.sh` is untested; the python3 and node paths are tested.

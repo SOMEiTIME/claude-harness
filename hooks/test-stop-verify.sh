@@ -113,8 +113,6 @@ if [ -n "$real_sandbox" ]; then
   sandbox_check "can't read .env" "! cat .env 2>/dev/null"
   rm .env
   sandbox_check "can't reach the network" "! /usr/bin/nc -z -G 5 1.1.1.1 443 2>/dev/null"
-  sandbox_check "can't ask the keychain for passwords" \
-    "security find-generic-password -s claude-harness-no-such-item >/dev/null 2>&1; [ \$? -ne 44 ]"
   git reset -q && rm -f inside.txt
 fi
 
