@@ -2,8 +2,12 @@
 # Self-test for stop-verify.sh: test-stop-verify.sh [path/to/stop-verify.sh]
 # Runs the hook against scratch repos and checks when it runs verify, when it
 # blocks (exit 2), that it caches passes and times out, and that it blocks on
-# edits to verify.sh and on work in a repo with no test command. Then checks
-# detect-verify.sh's CMake/ctest detection.
+# edits to verify.sh and on work in a repo with no test command, and what the
+# verify sandbox (verify.sb) stops. Then checks detect-verify.sh's CMake/ctest
+# detection.
+# Seatbelt sandboxes can't nest, so inside Claude's sandbox or a sandboxed
+# verify run, sandbox-exec is swapped for a pass-through and the sandbox's own
+# checks are skipped. Anywhere else they must run.
 
 hook="${1:-$(dirname "$0")/stop-verify.sh}"
 hook="$(cd "$(dirname "$hook")" && pwd)/$(basename "$hook")"
@@ -24,6 +28,22 @@ new_repo() {
   git push -q origin main 2>/dev/null
   git remote set-head origin main
 }
+
+sandbox_shim="$tmp/shim"
+mkdir "$sandbox_shim"
+if sandbox-exec -p '(version 1)(allow default)' /usr/bin/true 2>/dev/null; then
+  real_sandbox=1
+elif [ -n "${SANDBOX_RUNTIME:-}${CLAUDE_HARNESS_VERIFY_SANDBOXED:-}" ]; then
+  real_sandbox=""
+  printf '#!/bin/bash\nwhile [ $# -gt 0 ]; do case "$1" in -f|-D|-p) shift 2 ;; *) break ;; esac; done\nexec "$@"\n' \
+    >"$sandbox_shim/sandbox-exec"
+  chmod +x "$sandbox_shim/sandbox-exec"
+  echo "note: already in a sandbox; skipping the verify sandbox checks"
+else
+  echo "FAIL: sandbox-exec doesn't work here, and this isn't a sandboxed run"
+  exit 1
+fi
+PATH="$sandbox_shim:$PATH"
 
 failures=0
 fail() { echo "FAIL: $1"; failures=$((failures + 1)); }
@@ -69,9 +89,43 @@ set_verify 'exit 1'
 echo more >>file.txt
 expect 2 "new changes after a pass are verified again"
 
-set_verify '[ -z "${YARN_CACHE_FOLDER+set}" ] || { echo "YARN_CACHE_FOLDER leaked" >&2; exit 1; }'
+set_verify "[ \"\$YARN_CACHE_FOLDER\" = '$HOME/.cache/yarn-sandbox' ] || { echo \"YARN_CACHE_FOLDER is \$YARN_CACHE_FOLDER\" >&2; exit 1; }"
 echo again >>file.txt
-YARN_CACHE_FOLDER="$tmp/sandbox-cache" expect 0 "verify doesn't see the sandbox's yarn cache"
+YARN_CACHE_FOLDER="$tmp/other-cache" expect 0 "verify uses the sandbox's yarn cache"
+
+# sandbox_check <description> <shell test that should pass inside the verify sandbox>
+sandbox_check() {
+  set_verify "$2 || { echo 'sandbox check failed' >&2; exit 1; }"
+  echo "$1" >>file.txt
+  VERIFY_TIMEOUT=30 expect 0 "verify sandbox: $1"
+}
+if [ -n "$real_sandbox" ]; then
+  probe="$HOME/.claude-harness-sandbox-probe-$$"
+  sandbox_check "can write the repo and temp" "touch inside.txt && touch '$tmp/inside.txt'"
+  sandbox_check "can't write outside the repo" "! touch '$probe' 2>/dev/null"
+  [ -e "$probe" ] && { rm -f "$probe"; fail "verify wrote outside the repo"; }
+  sandbox_check "can't plant a git hook" "! touch .git/hooks/pre-push 2>/dev/null"
+  sandbox_check "can't change git config" "! git config --local core.hooksPath x 2>/dev/null"
+  sandbox_check "can't move .git" "! mv .git .git-moved 2>/dev/null"
+  [ -d .git-moved ] && { mv .git-moved .git; fail "verify moved .git"; }
+  sandbox_check "can still stage files" "git add inside.txt"
+  echo SECRET=1 >.env
+  sandbox_check "can't read .env" "! cat .env 2>/dev/null"
+  rm .env
+  sandbox_check "can't reach the network" "! /usr/bin/nc -z -G 5 1.1.1.1 443 2>/dev/null"
+  git reset -q && rm -f inside.txt
+fi
+
+# No sandbox, no verify.
+mkdir "$tmp/broken" && printf '#!/bin/bash\nexit 1\n' >"$tmp/broken/sandbox-exec" && chmod +x "$tmp/broken/sandbox-exec"
+set_verify 'exit 0'
+echo nosandbox >>file.txt
+PATH="$tmp/broken:$PATH" expect 2 "verify that can't be sandboxed blocks"
+grep -q "Can't sandbox the test command" "$tmp/stderr" || fail "no-sandbox reason missing"
+mkdir "$tmp/no-profile" && cp "$(dirname "$hook")"/*.sh "$tmp/no-profile/"
+real_hook="$hook" && hook="$tmp/no-profile/stop-verify.sh"
+expect 2 "missing verify.sb blocks"
+hook="$real_hook"
 
 set_verify 'sleep 30'
 echo hang >>file.txt
