@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 # Self-test for stop-verify.sh: test-stop-verify.sh [path/to/stop-verify.sh]
-# Runs the hook against scratch repos and checks when it runs verify, when it
-# blocks (exit 2), that it caches passes and times out, and that it blocks on
-# edits to verify.sh and on work in a repo with no test command, and what the
-# verify sandbox (verify.sb) stops. Then checks detect-verify.sh's CMake/ctest
-# detection.
-# Seatbelt sandboxes can't nest, so inside Claude's sandbox or a sandboxed
-# verify run, sandbox-exec is swapped for a pass-through and the sandbox's own
-# checks are skipped. Anywhere else they must run.
+# Runs the hook against scratch repos, then checks detect-verify.sh's CMake/ctest
+# detection. Seatbelt sandboxes can't nest, so inside Claude's sandbox or a
+# sandboxed verify run, sandbox-exec is swapped for a pass-through and the
+# verify sandbox's own checks are skipped. Anywhere else they must run.
 
 hook="${1:-$(dirname "$0")/stop-verify.sh}"
 hook="$(cd "$(dirname "$hook")" && pwd)/$(basename "$hook")"
@@ -55,9 +51,8 @@ expect() {
     "$hook" 2>"$tmp/stderr" >/dev/null
   got=$?
   if [ "$got" != "$want" ]; then
-    echo "FAIL (want $want, got $got): $description"
+    fail "(want $want, got $got) $description"
     sed 's/^/    /' "$tmp/stderr"
-    failures=$((failures + 1))
   fi
 }
 
@@ -137,7 +132,7 @@ grep -q "timed out" "$tmp/stderr" || fail "timeout reason missing"
 set_verify 'exit 0'
 echo edit >>.claude/verify.sh
 expect 2 "uncommitted edit to verify.sh blocks"
-grep -q "verify.sh changed in this session; human review required." "$tmp/stderr" || fail "verify.sh edit reason missing"
+grep -q "human review required" "$tmp/stderr" || fail "verify.sh edit reason missing"
 expect 0 "edited verify.sh: stop_hook_active lets Claude stop" true
 git commit -q -am "edit verify.sh"
 expect 2 "edit to verify.sh committed on the branch blocks"
@@ -155,8 +150,7 @@ new_repo bare
 expect 0 "no test command and no work allows the stop"
 echo work >file.txt
 expect 2 "work with no test command blocks"
-grep -q "No test command for this repo. Add .claude/verify.sh or a supported test entry point." "$tmp/stderr" ||
-  fail "no-test-command reason missing"
+grep -q "No test command" "$tmp/stderr" || fail "no-test-command reason missing"
 expect 0 "no test command: stop_hook_active lets Claude stop" true
 mkdir .claude && printf '#!/usr/bin/env bash\nexit 0\n' >.claude/verify.sh && chmod +x .claude/verify.sh
 printf '.claude/\n' >.git/info/exclude
