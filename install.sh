@@ -2,18 +2,12 @@
 # Install the guardrails for every Claude Code session on this machine:
 #   install.sh            install or update
 #   install.sh --dry-run  show what would change, write nothing
-# - copies the hooks and install-from-github.sh into ~/.claude/hooks/claude-harness/
-# - merges templates/settings.json into ~/.claude/settings.json (lists are
-#   unioned, existing keys and values win)
-# - adds the guardrails section to ~/.claude/CLAUDE.md, or refreshes it
-# - creates ~/.cache/yarn-sandbox, the yarn cache sandboxed commands use
-# Idempotent: a second run changes nothing. Needs python3 for the merges.
-# Run it yourself (with `!` inside Claude Code): the sandbox stops Claude's
-# shell from writing to ~/.claude, which is what keeps the guardrails safe.
-# After the first install, update with ~/.claude/hooks/claude-harness/install-from-github.sh,
-# which runs this script from main on GitHub rather than from a clone Claude can edit.
-# Repos get their test command from .claude/verify.sh (see add-verify.sh) or
-# one detect-verify.sh recognizes.
+# Copies the hooks and install-from-github.sh into ~/.claude/hooks/claude-harness/,
+# merges templates/settings.json into ~/.claude/settings.json (lists are unioned,
+# existing values win), refreshes the guardrails section of ~/.claude/CLAUDE.md,
+# and creates ~/.cache/yarn-sandbox. Idempotent. Needs python3.
+# Run it yourself (with `!`): Claude's sandbox can't write to ~/.claude. After the
+# first install, update with ~/.claude/hooks/claude-harness/install-from-github.sh.
 set -euo pipefail
 
 harness="$(cd "$(dirname "$0")" && pwd)"
@@ -41,8 +35,9 @@ trap 'rm -rf "$tmp"' EXIT
 # Scripts and the verify sandbox profile get full diffs too: they run outside
 # Claude's sandbox or decide what verify can do.
 for script in hooks/block-dangerous.sh hooks/stop-verify.sh hooks/verify.sb hooks/detect-verify.sh hooks/json-field.sh install-from-github.sh; do
-  target="$claude_dir/hooks/claude-harness/$(basename "$script")"
-  write_if_changed "$target" "$harness/$script" "hooks/claude-harness/$(basename "$script")"
+  name="hooks/claude-harness/$(basename "$script")"
+  target="$claude_dir/$name"
+  write_if_changed "$target" "$harness/$script" "$name"
   [ -n "$dry_run" ] || chmod +x "$target"
 done
 
