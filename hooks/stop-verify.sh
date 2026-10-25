@@ -1,19 +1,15 @@
 #!/usr/bin/env bash
-# Stop hook. Runs the repo's test command (from detect-verify.sh, usually
-# .claude/verify.sh) when Claude finishes a turn and, if it fails, exits 2 with
-# the tail of its output so Claude keeps fixing.
-# - Fails closed on the repo: work on the branch with no test command blocks,
-#   and so does any change to .claude/verify.sh (Claude mustn't write its own gate).
-# - Stop fires at the end of every turn, so verify only runs when the branch
-#   has work on it (uncommitted changes, or commits not on the default branch)
-#   and that work changed since the last passing run.
-# - The test command runs under sandbox-exec with verify.sb; if that can't
-#   happen, it blocks instead of running it unsandboxed.
-# - If this stop was already forced by a Stop hook (stop_hook_active), it lets
-#   Claude stop: one forced retry per turn, then it's back to the user.
+# Stop hook. When the branch has work on it (uncommitted changes, or commits not
+# on the default branch) that changed since the last pass, runs the repo's test
+# command (from detect-verify.sh) under sandbox-exec with verify.sb, and on
+# failure exits 2 with the tail of its output so Claude keeps fixing.
+# - Fails closed on the repo: blocks if there's no test command, if
+#   .claude/verify.sh changed (Claude mustn't write its own gate), or if the
+#   test command can't be sandboxed.
+# - Fails open on its own problems (unparseable input, missing detect-verify.sh).
+# - One forced retry per turn: with stop_hook_active set, it lets Claude stop.
 # - The test command is killed after VERIFY_TIMEOUT seconds (default 540, under
-#   the 600s hook timeout in settings.json) and the timeout counts as a failure.
-# Fails open on itself: any problem with the hook allows the stop.
+#   the 600s hook timeout in settings.json); a timeout counts as a failure.
 # Written for bash 3.2, which is what macOS ships.
 
 hook_dir="$(cd "$(dirname "$0")" && pwd)"
