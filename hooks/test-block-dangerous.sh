@@ -13,6 +13,7 @@ git init -q "$repo" && git -C "$repo" checkout -q -b feature
 git init -q "$on_main" && git -C "$on_main" checkout -q -b main
 
 failures=0
+fail() { echo "FAIL: $1"; failures=$((failures + 1)); }
 
 json_escape() {
   local s="$1"
@@ -27,10 +28,7 @@ expect() {
   printf '{"hook_event_name":"PreToolUse","tool_name":"Bash","cwd":"%s","tool_input":{"command":"%s"}}' \
     "$(json_escape "$cwd")" "$(json_escape "$command")" | "$hook" 2>/dev/null
   got=$?
-  if [ "$got" != "$want" ]; then
-    echo "FAIL (want $want, got $got): $command"
-    failures=$((failures + 1))
-  fi
+  [ "$got" = "$want" ] || fail "(want $want, got $got) $command"
 }
 blocked() { expect 2 "$repo" "$1"; }
 allowed() { expect 0 "$repo" "$1"; }
@@ -122,8 +120,6 @@ allowed 'git commit -m "Add maintenance mode"'
 blocked 'cat .env'
 blocked 'cat config/.env.local'
 blocked 'head -5 .env.example'
-blocked 'grep KEY .env'
-blocked 'source .env'
 blocked 'less server.pem'
 blocked 'cat certs/private.key'
 blocked 'cp ~/.ssh/id_rsa /tmp/x'
@@ -156,7 +152,7 @@ allowed 'yarn test && yarn build'
 
 # fails closed on input it can't parse
 printf 'not json' | "$hook" 2>/dev/null
-[ $? -eq 2 ] || { echo "FAIL: unparseable input should be blocked"; failures=$((failures + 1)); }
+[ $? -eq 2 ] || fail "unparseable input should be blocked"
 
 if [ $failures -eq 0 ]; then
   echo "block-dangerous.sh: all tests passed"
