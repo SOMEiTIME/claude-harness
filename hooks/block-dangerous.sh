@@ -4,6 +4,8 @@
 #   - recursive rm of /, ~, $VARS, .., the repo root, .git, or anything outside the repo
 #   - force pushes, pushes to main/master, git reset --hard to a remote branch,
 #     deleting main/master
+#   - pushes to a local repo, and gh pr reading files the sandbox can't (both run
+#     outside the sandbox)
 #   - commands that name .env files, keys or credential files
 #   - piping a download into a shell (curl ... | sh)
 # Pattern matching is best-effort: it catches the forms Claude usually writes,
@@ -63,35 +65,43 @@ done
 
 # --- per-command checks --------------------------------------------------------
 
+# Prints path $1 made absolute from $cwd, with symlinks in its parent resolved
+# (macOS /var -> /private/var) to compare with git's path. Nothing if $cwd is unknown.
+absolute_path() {
+  local path="$1" parent
+  case "$path" in
+    /*) ;;
+    *) [ -n "$cwd" ] || return; path="$cwd/$path" ;;
+  esac
+  while [ "${path%/}" != "$path" ] && [ "$path" != "/" ]; do path="${path%/}"; done
+  path="${path%/.}"
+  parent="$(cd "$(dirname "$path")" 2>/dev/null && pwd -P)" && path="${parent%/}/$(basename "$path")"
+  echo "$path"
+}
+
+# True if absolute path $1 is in the repo or a temp folder.
+in_repo_or_temp() {
+  case "$1" in
+    "$repo_root"/*|/tmp/*|/private/tmp/*|/var/folders/*|/private/var/folders/*) return 0 ;;
+  esac
+  [ -n "$TMPDIR" ] && [[ $1 == "${TMPDIR%/}"/* ]]
+}
+
 # Prints the reason if rm -r on path $1 isn't safe, nothing if it is.
 unsafe_rm_target() {
-  local target="$1" path parent
+  local target="$1" path
   case "$target" in
     "~"*) echo "it targets your home directory"; return ;;
     "\$"*) echo "it starts with a variable ($target) whose value can't be checked; use a literal path"; return ;;
     ..|../*|*/..|*/../*) echo "it uses .. to leave the current directory"; return ;;
     .|./|"*") echo "it deletes the whole working directory"; return ;;
   esac
-  case "$target" in
-    /*) path="$target" ;;
-    *) [ -n "$cwd" ] || { echo "an earlier cd went somewhere that can't be checked"; return; }
-       path="$cwd/$target" ;;
-  esac
-  while [ "${path%/}" != "$path" ] && [ "$path" != "/" ]; do path="${path%/}"; done
-  path="${path%/.}"
-  # Resolve symlinks in the parent (macOS /var -> /private/var) to compare with git's path.
-  parent="$(cd "$(dirname "$path")" 2>/dev/null && pwd -P)" && path="${parent%/}/$(basename "$path")"
-
+  path="$(absolute_path "$target")"
+  [ -n "$path" ] || { echo "an earlier cd went somewhere that can't be checked"; return; }
   if [ "$path" = "$repo_root" ] || [ "$path" = "$repo_root/.git" ]; then
     echo "it deletes the repo or its .git directory"; return
   fi
-  case "$path" in
-    "$repo_root"/*|/tmp/*|/private/tmp/*|/var/folders/*|/private/var/folders/*) return ;;
-  esac
-  if [ -n "$TMPDIR" ]; then
-    case "$path" in "${TMPDIR%/}"/*) return ;; esac
-  fi
-  echo "$target is outside the repo ($repo_root)"
+  in_repo_or_temp "$path" || echo "$target is outside the repo ($repo_root)"
 }
 
 check_rm() {
@@ -112,6 +122,67 @@ check_rm() {
   for word in ${targets[@]+"${targets[@]}"}; do
     reason="$(unsafe_rm_target "$word")"
     [ -n "$reason" ] && block "recursive rm refused: $reason"
+  done
+}
+
+# True if git remote URL $1 is on the network. Pushes run outside the sandbox
+# (settings.json), and pushing to a local repo (a path, file://) runs its hooks there.
+scp_style='^[^/:]+:' # host:path; git reads it as ssh when no / comes before the :
+is_network_url() {
+  case "$1" in
+    *::*) return 1 ;; # transport::address, e.g. ext::<command>
+    https://*|http://*|ssh://*|git+ssh://*|ssh+git://*|git://*) return 0 ;;
+    *://*) return 1 ;; # file:// and anything else
+  esac
+  [[ $1 =~ $scp_style ]]
+}
+
+# Blocks a push whose remote (name or URL) $2, as seen from directory $1, isn't on the network.
+check_push_remote() {
+  local git_dir="$1" remote="$2" urls url
+  urls="$(git -C "$git_dir" remote get-url --push --all "$remote" 2>/dev/null ||
+    git -C "$git_dir" ls-remote --get-url "$remote" 2>/dev/null)"
+  [ -n "$urls" ] || urls="$remote"
+  while IFS= read -r url; do
+    is_network_url "$url" ||
+      block "git push to $url is refused: push runs outside the sandbox, and pushing to a local repo runs that repo's hooks; push to a network remote"
+  done <<<"$urls"
+}
+
+# Prints the reason if gh pr (outside the sandbox) mustn't read file $1, nothing
+# if it may: only regular files in the repo or a temp folder, where the sandbox
+# could have read them too.
+unsafe_body_file() {
+  local file="$1" path
+  case "$file" in
+    "~"*) echo "it's outside the repo"; return ;;
+    "\$"*) echo "it starts with a variable whose value can't be checked"; return ;;
+  esac
+  path="$(absolute_path "$file")"
+  [ -n "$path" ] || { echo "an earlier cd went somewhere that can't be checked"; return; }
+  in_repo_or_temp "$path" || { echo "it's outside the repo and temp folders"; return; }
+  [ -L "$path" ] && { echo "it's a symlink"; return; }
+  [ -n "$(find "$path" -prune -links +1 2>/dev/null)" ] && echo "it's a hard link"
+}
+
+# gh pr runs outside the sandbox (settings.json), so it mustn't read files the sandbox can't.
+input_redirect='(^|[^<])<([^<]|$)' # < file or <(...), not << or <<<
+check_gh_pr() {
+  local word file reason
+  if [[ $command =~ $input_redirect ]] || [[ $command == *'$('* ]] || [[ $command == *'`'* ]]; then
+    block "gh pr runs outside the sandbox, so it can't take input from < or \$(...); write the text to a file in the repo and use --body-file"
+  fi
+  while [ $# -gt 0 ]; do
+    word="$1"; shift
+    case "$word" in
+      --body-file=*|--recover=*) file="${word#*=}" ;;
+      -F?*) file="${word#-F}" ;;
+      --body-file|--recover|-F) file="${1-}"; [ $# -gt 0 ] && shift ;;
+      *) continue ;;
+    esac
+    [ "$file" = - ] && continue
+    reason="$(unsafe_body_file "$file")"
+    [ -n "$reason" ] && block "gh pr runs outside the sandbox, so reading $file is refused: $reason"
   done
 }
 
@@ -143,7 +214,10 @@ check_git() {
           --force*|--force-with-lease*|--force-if-includes) block "force pushes are not allowed" ;;
           --mirror|--all) block "git push $word would push main/master too" ;;
           --receive-pack*|--exec*) block "git push $word runs a command outside the sandbox" ;;
-          -o|--push-option|--repo) shift ;;
+          --repo*) block "git push --repo isn't checked; name the remote as the first argument" ;;
+          --recurse-submodules=check|--recurse-submodules=no) ;;
+          --recurse-submodules*) block "git push $word pushes submodules to remotes that aren't checked" ;;
+          -o|--push-option) shift ;;
           --*) ;;
           -*) [[ $word == *f* ]] && block "force pushes are not allowed" ;;
           +*) block "a +refspec is a force push" ;;
@@ -159,11 +233,17 @@ check_git() {
         case "$dst" in HEAD|@) dst="$(current_branch "$git_dir")" ;; esac
         is_main "$dst" && block "pushing to $dst is not allowed; push a branch and open a PR"
       done
+      local current remote="${positional[0]-}"
+      current="$(current_branch "$git_dir")"
       if [ ${#positional[@]} -le 1 ]; then
-        local current
-        current="$(current_branch "$git_dir")"
         is_main "$current" && block "a bare git push from $current would push to $current; push a branch and open a PR"
       fi
+      if [ -z "$remote" ]; then
+        remote="$(git -C "$git_dir" config "branch.$current.pushRemote" 2>/dev/null ||
+          git -C "$git_dir" config remote.pushDefault 2>/dev/null ||
+          git -C "$git_dir" config "branch.$current.remote" 2>/dev/null || echo origin)"
+      fi
+      check_push_remote "$git_dir" "$remote"
       ;;
     fetch)
       # git fetch runs outside the sandbox (settings.json), so nothing may make it run a command.
@@ -250,6 +330,7 @@ while IFS= read -r segment; do
   case "$program" in
     rm) check_rm ${args[@]+"${args[@]}"} ;;
     git) check_git ${args[@]+"${args[@]}"} ;;
+    gh) [ "${args[0]:-}" = pr ] && check_gh_pr ${args[@]+"${args[@]}"} ;;
     cd|pushd) cwd="$(resolve_cd "${args[0]:-}")" ;;
   esac
 done <<<"$segments"
