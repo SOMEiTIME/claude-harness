@@ -125,9 +125,10 @@ check_rm() {
   done
 }
 
+scp_style='^[^/:]+:' # host:path; git reads it as ssh when no / comes before the :
+
 # True if git remote URL $1 is on the network. Pushes run outside the sandbox
 # (settings.json), and pushing to a local repo (a path, file://) runs its hooks there.
-scp_style='^[^/:]+:' # host:path; git reads it as ssh when no / comes before the :
 is_network_url() {
   case "$1" in
     *::*) return 1 ;; # transport::address, e.g. ext::<command>
@@ -150,8 +151,8 @@ check_push_remote() {
 }
 
 # Prints the reason if gh pr (outside the sandbox) mustn't read file $1, nothing
-# if it may: only regular files in the repo or a temp folder, where the sandbox
-# could have read them too.
+# if it may: only files in the repo or a temp folder, where the sandbox could have
+# read them too, and not links to files elsewhere.
 unsafe_body_file() {
   local file="$1" path
   case "$file" in
@@ -165,8 +166,9 @@ unsafe_body_file() {
   [ -n "$(find "$path" -prune -links +1 2>/dev/null)" ] && echo "it's a hard link"
 }
 
-# gh pr runs outside the sandbox (settings.json), so it mustn't read files the sandbox can't.
 input_redirect='(^|[^<])<([^<]|$)' # < file or <(...), not << or <<<
+
+# gh pr runs outside the sandbox (settings.json), so it mustn't read files the sandbox can't.
 check_gh_pr() {
   local word file reason
   if [[ $command =~ $input_redirect ]] || [[ $command == *'$('* ]] || [[ $command == *'`'* ]]; then
